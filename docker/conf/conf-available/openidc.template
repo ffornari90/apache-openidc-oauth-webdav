@@ -1,0 +1,10 @@
+OIDCClaimPrefix                 "OIDC-"
+OIDCResponseType                "code"
+OIDCScope                       "openid email profile offline_access"
+OIDCProviderMetadataURL         "https://${IAM_HOST}/.well-known/openid-configuration"
+OIDCClientID                    ${OIDC_CLIENT_ID}
+OIDCClientSecret                ${OIDC_CLIENT_SECRET}
+OIDCProviderTokenEndpointAuth   client_secret_basic
+OIDCCryptoPassphrase            passphrase
+OIDCRedirectURI                 /openid/redirect
+OIDCOAuthVerifyJwksUri          "https://${IAM_HOST}/jwk"
