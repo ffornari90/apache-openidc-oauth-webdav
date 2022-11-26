@@ -11,9 +11,14 @@ set -e
 #   ANONYMOUS_METHODS
 #   SSL_CERT
 
-envsubst '${OIDC_CLIENT_ID},${OIDC_CLIENT_SECRET}' \
-    < "$HTTPD_PREFIX/conf/conf-available/openidc.template" \
-    > "$HTTPD_PREFIX/conf/conf-available/openidc.conf"
+cp "$HTTPD_PREFIX/conf/conf-available/openidc.template" \
+   "$HTTPD_PREFIX/conf/conf-available/openidc.conf"
+
+sed -i 's/\${OIDC_CLIENT_ID}/'$OIDC_CLIENT_ID'/g' \
+    "$HTTPD_PREFIX/conf/conf-available/openidc.conf"
+
+sed -i 's/\${OIDC_CLIENT_SECRET}/'$OIDC_CLIENT_SECRET'/g' \
+    "$HTTPD_PREFIX/conf/conf-available/openidc.conf"
 
 sed -i 's/\${IAM_HOST}/'$IAM_HOST'/g' \
     "$HTTPD_PREFIX/conf/conf-available/openidc.conf"

@@ -1,4 +1,4 @@
-FROM httpd:alpine
+FROM httpd:2.4.41-alpine
 
 ENV MOD_AUTH_OPENIDC_REPOSITORY https://github.com/zmartzone/mod_auth_openidc.git
 
@@ -8,36 +8,35 @@ ENV BUILD_DIR /tmp/mod_auth_openidc
 
 ENV APACHE_DEFAULT_CONF /usr/local/apache2/conf/httpd.conf
 
-# add testing repository (for cjose library)
-RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories && \
-    echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
-
 # ADD source
 RUN mkdir ${BUILD_DIR} 
 
 # add dependencies, build and install mod_auth_openidc, need atomic operation for image size
-RUN apk update && apk add --no-cache \
+RUN apk add --no-cache git \
+  g++ \
+  autoconf \
+  automake \
+  make \
+  libtool \
+  jansson-dev \
+  openssl-dev \
+  apr-util-dbm_db && \
+  git clone https://github.com/cisco/cjose.git && \
+  cd cjose && \
+  ./configure && make && make install && \
+  cd .. && rm -rf cjose && \
+  apk add --no-cache \
   apache2 \
   apache2-proxy \
   wget \
-  jansson \
   hiredis \
   hiredis-dev \
-  cjose \
-  cjose-dev \
-  git \
-  autoconf \
   build-base \
-  automake \
   curl \
   apache2-dev \
   curl-dev \
   pcre-dev \
   pcre2-dev \
-  libtool \
-  make \
-  openssl \
-  envsubst \
   bash \
   && \
   cd ${BUILD_DIR} && \
@@ -50,16 +49,13 @@ RUN apk update && apk add --no-cache \
   cd ../.. && \
   rm -fr ${BUILD_DIR} && \
   apk del git \
-  cjose-dev \
   apache2-dev \
   autoconf \
   automake \
   build-base \
   wget \
   hiredis-dev \
-  curl-dev \
   pcre-dev \
-  pcre2-dev \
   libtool
 
 # configure apache 
