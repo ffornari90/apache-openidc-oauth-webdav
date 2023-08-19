@@ -36,7 +36,7 @@ services:
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
     volumes:
-      - ./srv/dav:/var/lib/dav
+      - /opt/apache-webdav:/var/lib/dav
       - trust-volume:/etc/ssl/certs
     depends_on:
       - trust
