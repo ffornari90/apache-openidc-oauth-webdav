@@ -9,14 +9,12 @@ services:
     command: sh -c "
         wget \"http://repository.egi.eu/sw/production/cas/1/current/tgz/\" &&
         mkdir tgz && mkdir certificates &&
-        for tgz in $$(cat index.html | awk -F'\"' '{print $$2}' | grep tar.gz);
+        for tgz in $$(cat index.html | awk -F'\"' '{print $$8}' | grep tar.gz);
         do wget http://repository.egi.eu/sw/production/cas/1/current/tgz/$$tgz -O tgz/$$tgz;
         done && for tgz in $$(ls tgz/);
         do tar xzf tgz/$$tgz --strip-components=1 -C certificates/; done &&
         for f in $$(find certificates/ -type f -name \"*.pem\");
         do cat $$f >> /certs/ca-certificates.crt; done &&
-        wget \"https://crt.sh/?d=2475254782\" -O /certs/geant-ov-rsa-ca.crt &&
-        cat /certs/geant-ov-rsa-ca.crt >> /certs/ca-certificates.crt &&
         nc -l -p 8085
       "
     volumes:
