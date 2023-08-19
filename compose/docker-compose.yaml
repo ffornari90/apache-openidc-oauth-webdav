@@ -1,40 +1,113 @@
 version: '3'
 
+networks:
+  net:
+
 volumes:
-  trust-volume:
+  cabundle:
+  trustanchors:
+  letsencrypt:
 
 services:
-  trust:
-    image: alpine
-    command: sh -c "
-        wget \"http://repository.egi.eu/sw/production/cas/1/current/tgz/\" &&
-        mkdir tgz && mkdir certificates &&
-        for tgz in $$(cat index.html | awk -F'\"' '{print $$8}' | grep tar.gz);
-        do wget http://repository.egi.eu/sw/production/cas/1/current/tgz/$$tgz -O tgz/$$tgz;
-        done && for tgz in $$(ls tgz/);
-        do tar xzf tgz/$$tgz --strip-components=1 -C certificates/; done &&
-        for f in $$(find certificates/ -type f -name \"*.pem\");
-        do cat $$f >> /certs/ca-certificates.crt; done &&
-        nc -l -p 8085
-      "
+  proxy:
+    container_name: proxy
+    image: harbor.cloud.infn.it/cache/library/traefik:${TRAEFIK_VERSION:-latest}
     volumes:
-      - trust-volume:/certs
+      - cabundle:/etc/pki
+      - letsencrypt:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    command: /bin/sh -c "
+        wget https://baltig.infn.it/infn-cloud/tosca-types/-/raw/master/artifacts/docker/elastic/tls.toml -O /opt/tls.toml
+        && while ! nc -z trust 8085; do sleep 1; done
+        && common_options=\"--log.level=DEBUG
+        --api.insecure=true
+        --providers.docker=true
+        --providers.docker.exposedbydefault=false
+        --providers.file.directory=/opt
+        --providers.file.watch=true
+        --entrypoints.web.address=:80
+        --entrypoints.websecure.address=:443
+        --entrypoints.web.http.redirections.entryPoint.to=websecure
+        --certificatesresolvers.myhttpchallenge.acme.httpchallenge=true
+        --certificatesresolvers.myhttpchallenge.acme.httpchallenge.entrypoint=web
+        --certificatesresolvers.myhttpchallenge.acme.email=${CONTACT_EMAIL}
+        --certificatesresolvers.myhttpchallenge.acme.storage=/letsencrypt/acme.json\"
+        && if [ \"$LETSENCRYPT_TEST\" == \"true\" ]; then
+        options=\"$$common_options --certificatesresolvers.myhttpchallenge.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory\";
+        else options=\"$$common_options\"; fi
+        && traefik $$options
+      "
+    networks:
+      - net
+
+  trust:
+    image: indigoiam/egi-trustanchors:main
+    container_name: trust
+    hostname: trust
+    entrypoint:
+      /bin/sh -c "
+        yum install -y epel-release
+        && yum install -y netcat
+        && /update-trust-anchors.sh
+        && echo '# GEANT eScience Personal CA 4' | tee -a /etc/pki/tls/certs/ca-bundle.crt
+        && cat /etc/grid-security/certificates/GEANTeSciencePersonalCA4.pem | tee -a /etc/pki/tls/certs/ca-bundle.crt
+        && cp /etc/pki/tls/certs/ca-bundle.crt /etc/grid-security/certificates/ca-certificates.crt
+        && nc -k -l 8085
+      "
+    environment:
+      FORCE_TRUST_ANCHORS_UPDATE: 1
+    volumes:
+      - trustanchors:/etc/grid-security/certificates
+      - cabundle:/etc/pki
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - net
 
   webdav:
     image: ffornari/apache-openidc-oauth-webdav
+    entrypoint: ["/bin/sh"]
+    command: -c "
+        apk add --no-cache jq &&
+        while true; do output=$$(jq -r '.myhttpchallenge | .Certificates[] | select(.domain.main==\"'$$APACHE_HOST'\") | .key'
+           /letsencrypt/acme.json 2>/dev/null | base64 -d > /privkey.pem);
+           if [[ -z \"$$output\" || $$? -ne 0 ]]; then sleep 5; else break; fi; done &&
+        jq -r '.myhttpchallenge | .Certificates[] | select(.domain.main==\"'$$APACHE_HOST'\") | .certificate'
+           /letsencrypt/acme.json | base64 -d > /cert.pem &&
+        /usr/local/bin/docker-entrypoint.sh httpd-foreground
+      "
     restart: always
-    ports:
-      - "8080:80"
+    #ports:
+    #  - "8080:80"
+    expose:
+      - "443"
     extra_hosts:
       - "${IAM_HOST}:${IAM_IP}"
-    links:
-      - "trust:trust"
     environment:
       IAM_HOST: ${IAM_HOST}
+      APACHE_HOST: ${HOST_PUBLIC_IP}.myip.cloud.infn.it
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
     volumes:
+      #- ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
+      #- ./dav.conf:/usr/local/apache2/conf/conf-available/dav.conf
       - /opt/apache-webdav:/var/lib/dav
-      - trust-volume:/etc/ssl/certs
+      - trustanchors:/etc/ssl/certs
+      - letsencrypt:/letsencrypt
     depends_on:
+      - proxy
       - trust
+    networks:
+      - net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tcp.routers.apache.rule=HostSNI(`${HOST_PUBLIC_IP}.myip.cloud.infn.it`)"
+      - "traefik.tcp.routers.apache.tls.passthrough=true"
+      - "traefik.tcp.routers.apache.tls.certresolver=myhttpchallenge"
+      - "traefik.tcp.routers.apache.entrypoints=websecure"
+      - "traefik.tcp.services.apache.loadbalancer.server.port=443"
