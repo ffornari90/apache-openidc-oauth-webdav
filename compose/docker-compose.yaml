@@ -75,15 +75,13 @@ services:
     command: -c "
         apk add --no-cache jq &&
         while true; do output=$$(jq -r '.myhttpchallenge | .Certificates[] | select(.domain.main==\"'$$APACHE_HOST'\") | .key'
-           /letsencrypt/acme.json 2>/dev/null | base64 -d > /privkey.pem);
+           /letsencrypt/acme.json 2>/dev/null | base64 -d | tee /privkey.pem);
            if [[ -z \"$$output\" || $$? -ne 0 ]]; then sleep 5; else break; fi; done &&
         jq -r '.myhttpchallenge | .Certificates[] | select(.domain.main==\"'$$APACHE_HOST'\") | .certificate'
            /letsencrypt/acme.json | base64 -d > /cert.pem &&
         /usr/local/bin/docker-entrypoint.sh httpd-foreground
       "
     restart: always
-    #ports:
-    #  - "8080:80"
     expose:
       - "443"
     extra_hosts:
